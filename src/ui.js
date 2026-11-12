@@ -7,6 +7,9 @@
   const overEl = $('over'), confirmEl = $('confirm');
   const cells = [];
   let g, best = 0, S = 40, G = 3, drag = null, busy = false, shownScore = 0;
+  // Touch reach: the piece travels this many times further than your thumb,
+  // so one thumb can cover the whole board. 1 = piece follows the finger exactly.
+  const REACH = 1.8;
 
   // ---- storage (best effort: the game runs fine without it) ----------------
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } };
@@ -127,8 +130,14 @@
   function moveDrag(e) {
     const a = app.getBoundingClientRect(), p = drag.p, pitch = S + G;
     const w = p.w * pitch - G, h = p.h * pitch - G;
-    const x = e.clientX - w / 2;
-    const y = drag.touch ? e.clientY - h - Math.max(46, S * 1.3) : e.clientY - h / 2;
+    let x, y;
+    if (drag.touch) {
+      // Start just above the thumb, then amplify movement from where the drag began.
+      x = drag.x0 + (e.clientX - drag.x0) * REACH - w / 2;
+      y = drag.y0 + (e.clientY - drag.y0) * REACH - h - Math.max(46, S * 1.3);
+      x = Math.max(a.left - w / 2, Math.min(a.right - w / 2, x));
+      y = Math.max(a.top - h / 2, Math.min(a.bottom - h / 2, y));
+    } else { x = e.clientX - w / 2; y = e.clientY - h / 2; }
     drag.el.style.transform = `translate(${x - a.left}px, ${y - a.top}px)`;
     showPreview(targetFor(x, y));
   }
@@ -139,7 +148,7 @@
     const el = pieceEl(p, 'drag');
     el.style.gridTemplateColumns = `repeat(${p.w}, var(--pc))`;
     app.appendChild(el);
-    drag = { s, p, el, slot, id: e.pointerId, touch: e.pointerType !== 'mouse', key: -2, target: null };
+    drag = { s, p, el, slot, id: e.pointerId, touch: e.pointerType !== 'mouse', key: -2, target: null, x0: e.clientX, y0: e.clientY };
     slot.classList.add('lifted');
     try { slot.setPointerCapture(e.pointerId); } catch (err) {}
     moveDrag(e);
