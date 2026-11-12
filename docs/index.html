@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Block Game</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Block Game">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#e6e9ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131821" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;600;700&family=Unbounded:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: one fixed portrait column (score, 8x8 well, tray of three).
+   Two tones only: slate tiles on the board, one amber accent for pieces in hand. */
+:root {
+  --bg: #e6e9ef;
+  --well: #d3d8e2;
+  --cell: #dde1e9;
+  --tile: #2e394c;
+  --tile-edge: #1f2837;
+  --accent: #d9731a;
+  --accent-edge: #b05a0e;
+  --ink: #1d2533;
+  --muted: #68748a;
+  --panel: #f4f6f9;
+  --font-display: "Unbounded", "Arial Black", "Helvetica Neue", sans-serif;
+  --font-body: "Onest", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --s: 40px;   /* board cell size, set from script */
+  --g: 3px;    /* gap between cells */
+  --ts: 19px;  /* tray cell size, set from script */
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131821; --well: #1a202b; --cell: #222a38; --tile: #c9d1df; --tile-edge: #9aa5b8;
+    --accent: #f09a36; --accent-edge: #c97a1e; --ink: #e8ecf3; --muted: #8a95a8; --panel: #1f2633;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131821; --well: #1a202b; --cell: #222a38; --tile: #c9d1df; --tile-edge: #9aa5b8;
+  --accent: #f09a36; --accent-edge: #c97a1e; --ink: #e8ecf3; --muted: #8a95a8; --panel: #1f2633;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body);
+  overflow: hidden; overscroll-behavior: none;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+}
+#app {
+  position: relative; height: 100%; max-width: 520px; margin: 0 auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  padding: calc(14px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+           calc(14px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+  touch-action: none;
+}
+
+/* ---- header ---- */
+.bar { width: calc(var(--s) * 8 + var(--g) * 7 + 12px); display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.label { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.score { font-family: var(--font-display); font-weight: 700; font-size: 40px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; margin-top: 4px; }
+.side { display: flex; align-items: flex-end; gap: 14px; }
+.best { text-align: right; }
+.best b { display: block; font-family: var(--font-display); font-weight: 500; font-size: 16px; line-height: 1; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.streak { display: inline-block; margin-left: 10px; padding: 3px 8px; border-radius: 99px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; vertical-align: 6px; opacity: 0; transition: opacity .2s; }
+.streak.on { opacity: 1; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.icon-btn { width: 40px; height: 40px; border-radius: 12px; border: 0; background: var(--well); display: grid; place-items: center; }
+.icon-btn svg { width: 18px; height: 18px; stroke: var(--ink); fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- board ---- */
+.board-wrap { position: relative; }
+.board { display: grid; grid-template-columns: repeat(8, var(--s)); grid-auto-rows: var(--s); gap: var(--g); padding: 6px; background: var(--well); border-radius: calc(var(--s) * 0.3); }
+.cell { border-radius: 22%; background: var(--cell); }
+.cell.on { background: var(--tile); box-shadow: inset 0 calc(var(--s) * -0.09) 0 var(--tile-edge); }
+.cell.ghost { background: var(--accent); opacity: 0.45; }
+.cell.hot, .cell.on.hot { background: var(--accent); opacity: 1; box-shadow: inset 0 calc(var(--s) * -0.09) 0 var(--accent-edge); }
+.cell.pop { animation: pop .16s ease-out; }
+.cell.clearing { animation: clear .32s ease-in forwards; }
+@keyframes pop { from { transform: scale(.8); } to { transform: scale(1); } }
+@keyframes clear {
+  0% { background: var(--accent); transform: scale(1); }
+  100% { background: var(--cell); transform: scale(.3); box-shadow: none; }
+}
+
+/* ---- pieces ---- */
+.tray { display: flex; justify-content: space-between; width: calc(var(--s) * 8 + var(--g) * 7 + 12px); }
+.slot { width: calc(var(--ts) * 5 + 8px + 10px); height: calc(var(--ts) * 5 + 8px + 10px); display: grid; place-items: center; touch-action: none; cursor: grab; border-radius: 16px; }
+.piece { display: grid; gap: 2px; grid-auto-rows: var(--pc); pointer-events: none; }
+.piece i { border-radius: 22%; background: var(--accent); box-shadow: inset 0 calc(var(--pc) * -0.09) 0 var(--accent-edge); }
+.piece i.off { visibility: hidden; }
+.slot .piece { --pc: var(--ts); transition: opacity .2s; }
+.slot.stuck .piece { opacity: 0.3; }
+.slot.lifted .piece { opacity: 0; transition: none; }
+.slot.fresh .piece { animation: rise .22s ease-out backwards; }
+.slot.fresh:nth-child(2) .piece { animation-delay: .04s; }
+.slot.fresh:nth-child(3) .piece { animation-delay: .08s; }
+@keyframes rise { from { transform: translateY(18px) scale(.7); opacity: 0; } }
+.drag { position: absolute; left: 0; top: 0; z-index: 5; --pc: var(--s); gap: var(--g); pointer-events: none; will-change: transform; filter: drop-shadow(0 6px 10px rgba(0,0,0,.22)); }
+.drag.home { transition: transform .16s ease-in, opacity .16s; opacity: .2; }
+
+/* ---- feedback ---- */
+.float { position: absolute; z-index: 6; pointer-events: none; font-family: var(--font-display); font-weight: 700; font-size: 18px; color: var(--ink); transform: translate(-50%, -50%); animation: float .8s ease-out forwards; white-space: nowrap; }
+@keyframes float { from { opacity: 0; margin-top: 8px; } 20% { opacity: 1; } to { opacity: 0; margin-top: -34px; } }
+.toast { position: absolute; left: 50%; top: 50%; z-index: 6; pointer-events: none; transform: translate(-50%, -50%); padding: 10px 18px; border-radius: 14px; background: var(--ink); color: var(--bg); font-family: var(--font-display); font-weight: 700; font-size: 18px; text-align: center; white-space: nowrap; animation: toast .95s ease-out forwards; }
+.toast small { display: block; font-family: var(--font-body); font-weight: 600; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; opacity: .75; margin-top: 2px; }
+@keyframes toast { from { opacity: 0; transform: translate(-50%, -40%) scale(.9); } 12% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 75% { opacity: 1; } to { opacity: 0; transform: translate(-50%, -62%); } }
+
+.sheet { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; border-radius: calc(var(--s) * 0.3); background: color-mix(in srgb, var(--bg) 82%, transparent); animation: fade .3s ease-out; }
+.sheet[hidden] { display: none; }
+.card { background: var(--panel); border-radius: 20px; padding: 22px 24px; text-align: center; min-width: 220px; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+.card h2 { margin: 0 0 4px; font-family: var(--font-display); font-weight: 700; font-size: 17px; text-wrap: balance; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; }
+.card .big { font-family: var(--font-display); font-weight: 700; font-size: 38px; line-height: 1.1; color: var(--ink); margin: 10px 0 2px; font-variant-numeric: tabular-nums; }
+.row { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+.btn { border: 0; border-radius: 12px; padding: 11px 18px; font-weight: 700; font-size: 15px; background: var(--well); }
+.btn.primary { background: var(--accent); color: #fff; }
+@keyframes fade { from { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .cell.pop, .slot.fresh .piece { animation: none; }
+  .cell.clearing { animation-duration: .01s; }
+  .drag.home { transition: none; }
+}
+
+</style>
+</head>
+<body>
+<main id="app">
+  <header class="bar">
+    <div>
+      <div class="label">Score</div>
+      <div><span class="score" id="score">0</span><span class="streak" id="streak">Streak ×2</span></div>
+    </div>
+    <div class="side">
+      <div class="best"><div class="label">Best</div><b id="best">0</b></div>
+      <button class="icon-btn" id="restart" type="button" aria-label="Start a new game">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="board-wrap" id="boardWrap">
+    <div class="board" id="board" aria-label="Game board, 8 by 8"></div>
+    <div class="sheet" id="over" hidden>
+      <div class="card">
+        <h2>No room left</h2>
+        <div class="big" id="overScore">0</div>
+        <p id="overNote">Best 0</p>
+        <div class="row"><button class="btn primary" id="again" type="button">Play again</button></div>
+      </div>
+    </div>
+    <div class="sheet" id="confirm" hidden>
+      <div class="card">
+        <h2>Start a new game?</h2>
+        <p>This game's score will be lost.</p>
+        <div class="row">
+          <button class="btn" id="confirmNo" type="button">Keep playing</button>
+          <button class="btn primary" id="confirmYes" type="button">New game</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tray" id="tray"><div class="slot"></div><div class="slot"></div><div class="slot"></div></div>
+</main>
+<script>
+/* Block game engine: board, pieces, scoring, and the hand "director".
+   No DOM access here, so it runs in Node for tests as well as in the page. */
+const Engine = (() => {
+  const N = 8, FULL = 255;
+
+  // ---- pieces -------------------------------------------------------------
+  const DEFS = [
+    ['dot', ['#']],
+    ['i2', ['##']], ['i2', ['#', '#']],
+    ['i3', ['###']], ['i3', ['#', '#', '#']],
+    ['i4', ['####']], ['i4', ['#', '#', '#', '#']],
+    ['i5', ['#####']], ['i5', ['#', '#', '#', '#', '#']],
+    ['o2', ['##', '##']],
+    ['o3', ['###', '###', '###']],
+    ['r23', ['###', '###']], ['r23', ['##', '##', '##']],
+    ['c2', ['##', '#.']], ['c2', ['##', '.#']], ['c2', ['#.', '##']], ['c2', ['.#', '##']],
+    ['c3', ['###', '#..', '#..']], ['c3', ['###', '..#', '..#']],
+    ['c3', ['#..', '#..', '###']], ['c3', ['..#', '..#', '###']],
+    ['l4', ['#.', '#.', '##']], ['l4', ['.#', '.#', '##']], ['l4', ['##', '#.', '#.']], ['l4', ['##', '.#', '.#']],
+    ['l4', ['###', '#..']], ['l4', ['###', '..#']], ['l4', ['#..', '###']], ['l4', ['..#', '###']],
+    ['t4', ['###', '.#.']], ['t4', ['.#.', '###']], ['t4', ['#.', '##', '#.']], ['t4', ['.#', '##', '.#']],
+    ['s4', ['.##', '##.']], ['s4', ['##.', '.##']], ['s4', ['#.', '##', '.#']], ['s4', ['.#', '##', '#.']],
+    ['d2', ['#.', '.#']], ['d2', ['.#', '#.']],
+    ['d3', ['#..', '.#.', '..#']], ['d3', ['..#', '.#.', '#..']],
+  ];
+  const PIECES = DEFS.map(([family, rows], id) => {
+    const masks = rows.map(s => [...s].reduce((m, ch, c) => m | (ch === '#' ? 1 << c : 0), 0));
+    const cells = [];
+    rows.forEach((s, r) => [...s].forEach((ch, c) => { if (ch === '#') cells.push([r, c]); }));
+    return { id, family, masks, cells, h: rows.length, w: rows[0].length, n: cells.length };
+  });
+
+  // How often each family shows up in each mode (per orientation).
+  const WEIGHTS = {
+    breeze:  { dot: 0, i2: 5, i3: 6, i4: 4, i5: 2, o2: 9, o3: 2, r23: 4, c2: 3, c3: 1, l4: 1.5, t4: 2, s4: 1, d2: 1, d3: 0.3 },
+    awkward: { dot: 0, i2: 0.5, i3: 2, i4: 5, i5: 6, o2: 2, o3: 9, r23: 6, c2: 1, c3: 3, l4: 1, t4: 1.5, s4: 2, d2: 2.5, d3: 3 },
+    puzzle:  { dot: 0, i2: 2, i3: 4, i4: 5, i5: 5, o2: 5, o3: 6, r23: 5, c2: 2, c3: 2, l4: 1.2, t4: 2, s4: 1.5, d2: 1, d3: 1 },
+    rescue:  { dot: 3, i2: 6, i3: 3, i4: 0, i5: 0, o2: 2, o3: 0, r23: 0, c2: 2, c3: 0, l4: 0, t4: 0, s4: 0, d2: 1, d3: 0 },
+  };
+
+  // ---- board primitives (board = array of 8 row bitmasks) ------------------
+  const pop8 = new Uint8Array(256);
+  for (let i = 1; i < 256; i++) pop8[i] = pop8[i >> 1] + (i & 1);
+  const emptyBoard = () => [0, 0, 0, 0, 0, 0, 0, 0];
+  const countCells = b => { let s = 0; for (let r = 0; r < N; r++) s += pop8[b[r]]; return s; };
+  const isEmpty = b => { for (let r = 0; r < N; r++) if (b[r]) return false; return true; };
+
+  function canPlace(b, p, r, c) {
+    if (r < 0 || c < 0 || r + p.h > N || c + p.w > N) return false;
+    for (let i = 0; i < p.h; i++) if (b[r + i] & (p.masks[i] << c)) return false;
+    return true;
+  }
+  function hasPlacement(b, p) {
+    for (let r = 0; r + p.h <= N; r++) for (let c = 0; c + p.w <= N; c++) if (canPlace(b, p, r, c)) return true;
+    return false;
+  }
+  function countPlacements(b, p) {
+    let k = 0;
+    for (let r = 0; r + p.h <= N; r++) for (let c = 0; c + p.w <= N; c++) if (canPlace(b, p, r, c)) k++;
+    return k;
+  }
+  // Lines a board (after a placement, before clearing) has completed.
+  function fullLines(b) {
+    const rows = []; let colMask = FULL;
+    for (let r = 0; r < N; r++) { if (b[r] === FULL) rows.push(r); colMask &= b[r]; }
+    const cols = [];
+    for (let c = 0; c < N; c++) if (colMask & (1 << c)) cols.push(c);
+    return { rows, cols, colMask };
+  }
+  // Returns the new board and the number of lines cleared. Does not mutate b.
+  function applyPlace(b, p, r, c) {
+    const nb = b.slice();
+    for (let i = 0; i < p.h; i++) nb[r + i] |= p.masks[i] << c;
+    let colMask = FULL, lines = 0;
+    for (let i = 0; i < N; i++) colMask &= nb[i];
+    for (let i = 0; i < N; i++) if (nb[i] === FULL) { nb[i] = 0; lines++; }
+    if (colMask) { lines += pop8[colMask]; const keep = ~colMask & FULL; for (let i = 0; i < N; i++) nb[i] &= keep; }
+    return { board: nb, lines };
+  }
+
+  // ---- solver -------------------------------------------------------------
+  // Bounded search over every order and position for a hand. Line-clearing
+  // placements are tried first, which finds answers fast on crowded boards.
+  function analyze(board, hand, budget = 4000, solutionCap = 10) {
+    let nodes = 0, solutions = 0, bestLines = 0, minCells = 99, allClear = false;
+    const rec = (b, rem, lines, emptied) => {
+      if (!rem.length) {
+        solutions++;
+        if (lines > bestLines) bestLines = lines;
+        const k = countCells(b); if (k < minCells) minCells = k;
+        if (emptied) allClear = true;
+        return;
+      }
+      const seen = new Set();
+      for (let i = 0; i < rem.length; i++) {
+        const p = rem[i];
+        if (seen.has(p.id)) continue; seen.add(p.id);
+        const rest = rem.filter((_, j) => j !== i);
+        const opts = [];
+        for (let r = 0; r + p.h <= N; r++) for (let c = 0; c + p.w <= N; c++)
+          if (canPlace(b, p, r, c)) opts.push(applyPlace(b, p, r, c));
+        opts.sort((x, y) => y.lines - x.lines);
+        for (const o of opts) {
+          if (nodes++ >= budget || solutions >= solutionCap) return;
+          rec(o.board, rest, lines + o.lines, emptied || isEmpty(o.board));
+        }
+      }
+    };
+    rec(board, hand, 0, false);
+    return { solvable: solutions > 0, solutions, bestLines, minCells, allClear, nodes };
+  }
+
+  // Looks for up to three pieces that wipe the board using clearing moves only.
+  function findAllClears(board, rand, maxNodes = 150000, cap = 6) {
+    const found = []; let nodes = 0;
+    const pool = PIECES.filter(p => p.family !== 'dot');
+    const gaps = b => {
+      let rg = 0, colAny = 0;
+      for (let r = 0; r < N; r++) { if (b[r]) rg += N - pop8[b[r]]; colAny |= b[r]; }
+      let cg = 0;
+      for (let c = 0; c < N; c++) if (colAny & (1 << c)) for (let r = 0; r < N; r++) if (!(b[r] & (1 << c))) cg++;
+      return [rg, cg];
+    };
+    const seenKey = new Set();
+    const rec = (b, seq) => {
+      const left = 3 - seq.length;
+      const [rg, cg] = gaps(b);
+      if (Math.min(rg, cg) > 9 * left) return;
+      const order = shuffle(pool.slice(), rand);
+      for (const p of order) {
+        // The last piece has to fill the remaining gaps exactly.
+        if (left === 1 && p.n !== rg && p.n !== cg) continue;
+        for (let r = 0; r + p.h <= N; r++) for (let c = 0; c + p.w <= N; c++) {
+          if (!canPlace(b, p, r, c)) continue;
+          if (nodes++ > maxNodes || found.length >= cap) return;
+          const o = applyPlace(b, p, r, c);
+          if (isEmpty(o.board)) {
+            const s2 = seq.concat(p), key = s2.map(x => x.id).sort().join();
+            if (!seenKey.has(key)) { seenKey.add(key); found.push(s2); }
+            break;
+          }
+          if (left === 1) continue;
+          if (!o.lines) { // a setup move must sit entirely in gaps of lines already in play
+            const [rg2, cg2] = gaps(o.board);
+            if (rg2 !== rg - p.n && cg2 !== cg - p.n) continue;
+          }
+          rec(o.board, seq.concat(p));
+        }
+      }
+    };
+    if (!isEmpty(board)) rec(board, []);
+    return found;
+  }
+
+  // ---- hand generation ----------------------------------------------------
+  function shuffle(a, rand) {
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+  function sampler(weights, rand) {
+    const items = PIECES.filter(p => weights[p.family] > 0);
+    const w = items.map(p => weights[p.family]);
+    const total = w.reduce((a, x) => a + x, 0);
+    return () => { let t = rand() * total; for (let i = 0; i < items.length; i++) { t -= w[i]; if (t <= 0) return items[i]; } return items[items.length - 1]; };
+  }
+  function sampleHand(pick, rand) {
+    for (;;) {
+      const h = [pick(), pick(), pick()];
+      if (h[0].id === h[1].id && h[1].id === h[2].id) continue;
+      const dup = h[0].id === h[1].id || h[1].id === h[2].id || h[0].id === h[2].id;
+      if (dup && rand() < 0.6) continue;
+      return h;
+    }
+  }
+  function candidates(board, mode, count, rand, budget = 4000, cap = 10) {
+    const pick = sampler(WEIGHTS[mode], rand), out = [];
+    for (let i = 0; i < count; i++) {
+      const hand = sampleHand(pick, rand);
+      const fits = hand.map(p => countPlacements(board, p));
+      const a = analyze(board, hand, budget, cap);
+      if (a.solvable) out.push({ hand, fits, blocked: fits.filter(f => f === 0).length, minFit: Math.min(...fits), a });
+    }
+    return out;
+  }
+  const pickTop = (list, score, rand, top = 3) => {
+    const s = list.map(x => ({ x, s: score(x) })).sort((p, q) => q.s - p.s);
+    return s[Math.floor(rand() * Math.min(top, s.length))].x;
+  };
+
+  const MODES = {
+    // Roomy pieces with plenty of places to go.
+    breeze(board, rand) {
+      const c = candidates(board, 'breeze', 14, rand).filter(x => x.blocked === 0);
+      return c.length ? pickTop(c, x => Math.min(x.minFit, 12) + 2 * x.a.bestLines + rand() * 4, rand, 4).hand : null;
+    },
+    // A hand that can wipe the board, or failing that, clear a lot of it.
+    wipe(board, rand) {
+      const wipes = findAllClears(board, rand);
+      if (!wipes.length) return null;
+      const seq = wipes[Math.floor(rand() * wipes.length)].slice();
+      const pick = sampler(WEIGHTS.breeze, rand);
+      while (seq.length < 3) seq.push(pick());
+      seq.wipe = true;
+      return seq;
+    },
+    clear(board, rand) {
+      const w = MODES.wipe(board, rand);
+      if (w) return w;
+      // No wipe in reach yet: deal whatever lets the board get emptiest, to set one up.
+      const c = candidates(board, 'breeze', 22, rand, 5000, 60).concat(candidates(board, 'puzzle', 10, rand, 5000, 60));
+      return c.length ? pickTop(c, x => x.a.bestLines - x.a.minCells, rand, 2).hand : null;
+    },
+    // At least one piece has nowhere to go until the others clear space.
+    puzzle(board, rand) {
+      const c = candidates(board, 'puzzle', 40, rand);
+      const forced = c.filter(x => x.blocked > 0);
+      if (forced.length) return pickTop(forced, x => x.blocked * 3 - x.a.solutions * 0.2 + rand() * 2, rand, 3).hand;
+      const tight = c.filter(x => x.minFit <= 4);
+      return tight.length ? pickTop(tight, x => -x.minFit - x.a.solutions * 0.1 + rand(), rand, 3).hand : null;
+    },
+    // Bulky, clumsy shapes that all fit but leave the board lumpy.
+    awkward(board, rand) {
+      const c = candidates(board, 'awkward', 20, rand).filter(x => x.blocked === 0);
+      return c.length ? pickTop(c, x => -x.a.bestLines * 2 - Math.min(x.minFit, 20) * 0.3 + x.hand.reduce((s, p) => s + p.n, 0) * 0.5 + rand() * 3, rand, 4).hand : null;
+    },
+  };
+
+  function choosePhase(board, score, prev, rand) {
+    const fill = countCells(board) / 64;
+    const heat = Math.min(1, score / 4000); // later in a run, lean harder
+    let w;
+    if (fill < 0.28) w = { breeze: 45, awkward: 35, clear: 20, puzzle: 0 };
+    else if (fill < 0.52) w = { breeze: 30, awkward: 24, clear: 20, puzzle: 26 };
+    else w = { breeze: 26, awkward: 8, clear: 30, puzzle: 36 };
+    w.breeze *= 1 - 0.35 * heat; w.puzzle *= 1 + 0.4 * heat; w.awkward *= 1 + 0.3 * heat;
+    if (prev) w[prev] = 0;
+    if (fill > 0 && fill < 0.25) w.clear *= 2; // a tidy board is a chance at a wipe
+    const total = Object.values(w).reduce((a, x) => a + x, 0);
+    let t = rand() * total, mode = 'breeze';
+    for (const k in w) { t -= w[k]; if (t <= 0) { mode = k; break; } }
+    const len = mode === 'clear' ? 3 : 2 + Math.floor(rand() * 3);
+    return { mode, left: len };
+  }
+
+  // Always returns a hand that can be fully placed on this board.
+  function dealHand(board, phase, rand) {
+    const order = [phase.mode, 'breeze', 'puzzle'];
+    // Outside the clear phase, a wipe that happens to be in reach is still offered most of the time.
+    if (phase.mode !== 'clear' && rand() < 0.6) order.unshift('wipe');
+    for (const m of order) {
+      const hand = MODES[m](board, rand);
+      if (hand) return { hand: shuffle(hand.slice(), rand), mode: hand.wipe ? 'clear' : m, wipe: !!hand.wipe };
+    }
+    const pick = sampler(WEIGHTS.rescue, rand);
+    for (let i = 0; i < 60; i++) {
+      const hand = sampleHand(pick, rand);
+      if (analyze(board, hand, 30000, 1).solvable) return { hand, mode: 'rescue' };
+    }
+    // Three single cells always fit: no row is ever full, so 8+ cells are free.
+    return { hand: [PIECES[0], PIECES[0], PIECES[0]], mode: 'rescue' };
+  }
+
+  // ---- game ---------------------------------------------------------------
+  const ALL_CLEAR_BONUS = 300;
+
+  function newGame(rand = Math.random) {
+    const g = { board: emptyBoard(), hand: [null, null, null], score: 0, combo: 0, dry: 0, over: false,
+                phase: { mode: 'breeze', left: 2 }, lastMode: 'breeze', hands: 0 };
+    deal(g, rand);
+    return g;
+  }
+  function deal(g, rand = Math.random) {
+    if (g.phase.left <= 0) g.phase = choosePhase(g.board, g.score, g.phase.mode, rand);
+    const d = dealHand(g.board, g.phase, rand);
+    g.phase.left--; g.hands++;
+    if (d.wipe) g.phase.left = 0; // the clear phase ends once a wipe has been offered
+    g.hand = d.hand.map(p => p.id);
+    g.lastMode = d.mode; g.wipeOffered = d.wipe;
+  }
+  const slotFits = (g, slot) => g.hand[slot] != null && hasPlacement(g.board, PIECES[g.hand[slot]]);
+
+  function place(g, slot, r, c, rand = Math.random, deferDeal = false) {
+    const p = PIECES[g.hand[slot]];
+    if (g.over || !p || !canPlace(g.board, p, r, c)) return null;
+    const filled = g.board.slice();
+    for (let i = 0; i < p.h; i++) filled[r + i] |= p.masks[i] << c;
+    const { rows, cols } = fullLines(filled);
+    const o = applyPlace(g.board, p, r, c);
+    g.board = o.board; g.hand[slot] = null;
+    let gained = p.n, lineScore = 0;
+    if (o.lines) {
+      g.combo++; g.dry = 0;
+      lineScore = 10 * o.lines * (o.lines + 1) / 2 * g.combo;
+    } else if (++g.dry >= 3) g.combo = 0;
+    const allClear = o.lines > 0 && isEmpty(g.board);
+    gained += lineScore + (allClear ? ALL_CLEAR_BONUS : 0);
+    g.score += gained;
+    let dealt = false, needsDeal = false;
+    if (g.hand.every(x => x == null)) {
+      if (deferDeal) needsDeal = true; else { deal(g, rand); dealt = true; }
+    }
+    g.over = !needsDeal && ![0, 1, 2].some(s => slotFits(g, s));
+    return { piece: p, r, c, rows, cols, lines: o.lines, gained, combo: o.lines ? g.combo : 0, allClear, dealt, needsDeal, over: g.over };
+  }
+  // Second half of a deferred deal (lets the UI paint the drop first).
+  function dealNow(g, rand = Math.random) {
+    if (g.hand.every(x => x == null)) deal(g, rand);
+    g.over = ![0, 1, 2].some(s => slotFits(g, s));
+  }
+
+  return { N, PIECES, emptyBoard, canPlace, hasPlacement, countPlacements, applyPlace, fullLines, countCells, isEmpty,
+           analyze, findAllClears, dealHand, choosePhase, newGame, deal, dealNow, place, slotFits, ALL_CLEAR_BONUS };
+})();
+if (typeof module !== 'undefined') module.exports = Engine;
+
+</script>
+<script>
+/* Touch UI for the block game. Depends on the global Engine. */
+(() => {
+  const E = Engine, N = E.N, P = E.PIECES, KEY = 'blockgame.v1';
+  const $ = id => document.getElementById(id);
+  const app = $('app'), boardEl = $('board'), wrap = $('boardWrap'), trayEl = $('tray');
+  const scoreEl = $('score'), bestEl = $('best'), streakEl = $('streak');
+  const overEl = $('over'), confirmEl = $('confirm');
+  const cells = [];
+  let g, best = 0, S = 40, G = 3, drag = null, busy = false, shownScore = 0;
+
+  // ---- storage (best effort: the game runs fine without it) ----------------
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } };
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(snapshot())); } catch (e) {} };
+  const snapshot = () => ({ g, best });
+  const validGame = x => x && Array.isArray(x.board) && x.board.length === N && Array.isArray(x.hand) && x.hand.length === 3
+    && x.hand.every(i => i == null || P[i]) && x.phase && typeof x.score === 'number';
+
+  // ---- layout -------------------------------------------------------------
+  function layout() {
+    const cs = getComputedStyle(app);
+    const W = app.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const H = app.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const fixedW = 7 * G + 12, fixedH = 64 /*bar*/ + 36 /*gaps*/ + 7 * G + 12 + 18 /*tray pad*/;
+    S = Math.max(18, Math.min(64, Math.floor(Math.min((W - fixedW) / 8, (H - fixedH) / (8 + 5 * 0.48)))));
+    const root = document.documentElement.style;
+    root.setProperty('--s', S + 'px');
+    root.setProperty('--ts', Math.floor(S * 0.48) + 'px');
+  }
+
+  // ---- rendering ----------------------------------------------------------
+  function buildBoard() {
+    for (let i = 0; i < N * N; i++) { const d = document.createElement('div'); d.className = 'cell'; boardEl.appendChild(d); cells.push(d); }
+  }
+  const has = (r, c) => (g.board[r] >> c) & 1;
+  function renderBoard() {
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+      const el = cells[r * N + c];
+      el.classList.toggle('on', !!has(r, c));
+      el.classList.remove('ghost', 'hot');
+    }
+  }
+  function pieceEl(p, cls) {
+    const d = document.createElement('div');
+    d.className = 'piece ' + (cls || '');
+    d.style.gridTemplateColumns = `repeat(${p.w}, var(--pc))`;
+    for (let r = 0; r < p.h; r++) for (let c = 0; c < p.w; c++) {
+      const i = document.createElement('i');
+      if (!((p.masks[r] >> c) & 1)) i.className = 'off';
+      d.appendChild(i);
+    }
+    return d;
+  }
+  function renderTray(fresh) {
+    [...trayEl.children].forEach((slot, s) => {
+      slot.innerHTML = '';
+      slot.className = 'slot';
+      const id = g.hand[s];
+      if (id == null) return;
+      slot.appendChild(pieceEl(P[id]));
+      if (fresh) slot.classList.add('fresh');
+      if (!E.hasPlacement(g.board, P[id])) slot.classList.add('stuck');
+    });
+  }
+  function renderScore(animate) {
+    const target = g.score;
+    if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches) { shownScore = target; scoreEl.textContent = target; }
+    else {
+      const from = shownScore, t0 = performance.now(), dur = 320;
+      const step = t => { const k = Math.min(1, (t - t0) / dur); shownScore = Math.round(from + (target - from) * k); scoreEl.textContent = shownScore; if (k < 1 && g.score === target) requestAnimationFrame(step); else { shownScore = g.score; scoreEl.textContent = g.score; } };
+      requestAnimationFrame(step);
+    }
+    if (g.score > best) best = g.score;
+    bestEl.textContent = best;
+    streakEl.textContent = 'Streak ×' + g.combo;
+    streakEl.classList.toggle('on', g.combo > 1);
+  }
+  function renderAll(fresh) { renderBoard(); renderTray(fresh); renderScore(false); overEl.hidden = !g.over; if (g.over) fillOver(); }
+
+  // ---- feedback -----------------------------------------------------------
+  function floatText(text, r, c) {
+    const d = document.createElement('div'); d.className = 'float'; d.textContent = text;
+    const pitch = S + G;
+    d.style.left = (6 + c * pitch) + 'px'; d.style.top = (6 + r * pitch) + 'px';
+    wrap.appendChild(d); d.addEventListener('animationend', () => d.remove());
+  }
+  function toast(title, sub) {
+    wrap.querySelectorAll('.toast').forEach(t => t.remove());
+    const d = document.createElement('div'); d.className = 'toast'; d.textContent = title;
+    if (sub) { const s = document.createElement('small'); s.textContent = sub; d.appendChild(s); }
+    wrap.appendChild(d); d.addEventListener('animationend', () => d.remove());
+  }
+  function fillOver() {
+    $('overScore').textContent = g.score;
+    $('overNote').textContent = g.score >= best && g.score > 0 ? 'New best' : 'Best ' + best;
+  }
+
+  // ---- dragging -----------------------------------------------------------
+  function targetFor(x, y) {
+    // x, y: top-left of the dragged piece in page coordinates
+    const b = boardEl.getBoundingClientRect(), pitch = S + G;
+    const fc = (x - b.left - 6) / pitch, fr = (y - b.top - 6) / pitch;
+    const p = drag.p, r0 = Math.round(fr), c0 = Math.round(fc);
+    if (E.canPlace(g.board, p, r0, c0)) return [r0, c0];
+    // Forgive near misses: snap to an adjacent valid spot if it is close enough.
+    let bestT = null, bestD = 0.75;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const r = r0 + dr, c = c0 + dc;
+      if (!E.canPlace(g.board, p, r, c)) continue;
+      const d = Math.hypot(r - fr, c - fc);
+      if (d < bestD) { bestD = d; bestT = [r, c]; }
+    }
+    return bestT;
+  }
+  function showPreview(t) {
+    const key = t ? t[0] * N + t[1] : -1;
+    if (drag.key === key) return;
+    drag.key = key; drag.target = t;
+    for (const el of cells) el.classList.remove('ghost', 'hot');
+    if (!t) return;
+    const filled = g.board.slice(), p = drag.p;
+    for (let i = 0; i < p.h; i++) filled[t[0] + i] |= p.masks[i] << t[1];
+    for (const [r, c] of p.cells) cells[(t[0] + r) * N + t[1] + c].classList.add('ghost');
+    const { rows, cols } = E.fullLines(filled);
+    for (const r of rows) for (let c = 0; c < N; c++) cells[r * N + c].classList.add('hot');
+    for (const c of cols) for (let r = 0; r < N; r++) cells[r * N + c].classList.add('hot');
+  }
+  function moveDrag(e) {
+    const a = app.getBoundingClientRect(), p = drag.p, pitch = S + G;
+    const w = p.w * pitch - G, h = p.h * pitch - G;
+    const x = e.clientX - w / 2;
+    const y = drag.touch ? e.clientY - h - Math.max(46, S * 1.3) : e.clientY - h / 2;
+    drag.el.style.transform = `translate(${x - a.left}px, ${y - a.top}px)`;
+    showPreview(targetFor(x, y));
+  }
+  function startDrag(e, slot, s) {
+    if (drag || busy || g.over || g.hand[s] == null || (e.button != null && e.button > 0)) return;
+    e.preventDefault();
+    const p = P[g.hand[s]];
+    const el = pieceEl(p, 'drag');
+    el.style.gridTemplateColumns = `repeat(${p.w}, var(--pc))`;
+    app.appendChild(el);
+    drag = { s, p, el, slot, id: e.pointerId, touch: e.pointerType !== 'mouse', key: -2, target: null };
+    slot.classList.add('lifted');
+    try { slot.setPointerCapture(e.pointerId); } catch (err) {}
+    moveDrag(e);
+  }
+  function endDrag(e, cancelled) {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag; drag = null;
+    for (const el of cells) el.classList.remove('ghost', 'hot');
+    if (!cancelled && d.target) { d.el.remove(); commit(d.s, d.target[0], d.target[1]); return; }
+    // Send it back to the tray.
+    const a = app.getBoundingClientRect(), sr = d.slot.getBoundingClientRect();
+    d.el.classList.add('home');
+    d.el.style.transform = `translate(${sr.left - a.left + sr.width / 2 - d.el.offsetWidth / 2}px, ${sr.top - a.top + sr.height / 2 - d.el.offsetHeight / 2}px) scale(.48)`;
+    setTimeout(() => { d.el.remove(); d.slot.classList.remove('lifted'); }, 170);
+  }
+
+  // ---- moves --------------------------------------------------------------
+  function commit(s, r, c) {
+    const res = E.place(g, s, r, c, Math.random, true);
+    if (!res) { renderTray(); return; }
+    renderBoard();
+    for (const [pr, pc] of res.piece.cells) {
+      const el = cells[(r + pr) * N + c + pc];
+      el.classList.add('pop'); el.addEventListener('animationend', () => el.classList.remove('pop'), { once: true });
+    }
+    const clearing = new Set();
+    for (const rr of res.rows) for (let cc = 0; cc < N; cc++) clearing.add(rr * N + cc);
+    for (const cc of res.cols) for (let rr = 0; rr < N; rr++) clearing.add(rr * N + cc);
+    for (const i of clearing) {
+      const el = cells[i];
+      el.classList.remove('pop'); el.classList.add('clearing');
+      el.addEventListener('animationend', () => el.classList.remove('clearing'), { once: true });
+    }
+    floatText('+' + res.gained, r + res.piece.h / 2, c + res.piece.w / 2);
+    if (res.allClear) toast('Board cleared', '+' + E.ALL_CLEAR_BONUS + ' bonus');
+    else if (res.lines > 1) toast(res.lines + ' lines');
+    renderScore(true);
+    if (res.needsDeal) {
+      // Pick the next hand after the drop has painted, so the drop never stutters.
+      busy = true; renderTray();
+      setTimeout(() => { E.dealNow(g); busy = false; renderTray(true); settle(); }, 60);
+    } else { renderTray(); settle(); }
+  }
+  function settle() {
+    save();
+    if (g.over) setTimeout(() => { if (g.over) { fillOver(); overEl.hidden = false; } }, 650);
+  }
+  function restart() {
+    confirmEl.hidden = true; overEl.hidden = true;
+    g = E.newGame(); shownScore = 0;
+    renderAll(true); save();
+  }
+
+  // ---- boot ---------------------------------------------------------------
+  function start(data) {
+    const saved = data && data.g ? data : load();
+    best = Math.max(0, +saved.best || 0);
+    g = validGame(saved.g) ? saved.g : E.newGame();
+    buildBoard(); layout(); renderAll(true);
+    [...trayEl.children].forEach((slot, s) => {
+      slot.addEventListener('pointerdown', e => startDrag(e, slot, s));
+      slot.addEventListener('pointermove', e => { if (drag && e.pointerId === drag.id) moveDrag(e); });
+      slot.addEventListener('pointerup', e => endDrag(e, false));
+      slot.addEventListener('pointercancel', e => endDrag(e, true));
+    });
+    $('restart').addEventListener('click', () => { if (g.score > 0 && !g.over) confirmEl.hidden = false; else restart(); });
+    $('confirmYes').addEventListener('click', restart);
+    $('confirmNo').addEventListener('click', () => { confirmEl.hidden = true; });
+    $('again').addEventListener('click', restart);
+    addEventListener('resize', layout);
+    document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+    document.addEventListener('gesturestart', e => e.preventDefault());
+    document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+    window.claude?.hot?.snapshot?.(snapshot);
+    window.__game = () => g; // handy for debugging from the console
+  }
+  if (window.claude?.hot?.ready) window.claude.hot.ready(start); else start(window.claude?.hot?.data ?? {});
+})();
+
+</script>
+<script>if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

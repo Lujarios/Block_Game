@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Block Game</title>
+<!--HEAD-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;600;700&family=Unbounded:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/*CSS*/
+</style>
+</head>
+<body>
+<main id="app">
+  <header class="bar">
+    <div>
+      <div class="label">Score</div>
+      <div><span class="score" id="score">0</span><span class="streak" id="streak">Streak ×2</span></div>
+    </div>
+    <div class="side">
+      <div class="best"><div class="label">Best</div><b id="best">0</b></div>
+      <button class="icon-btn" id="restart" type="button" aria-label="Start a new game">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="board-wrap" id="boardWrap">
+    <div class="board" id="board" aria-label="Game board, 8 by 8"></div>
+    <div class="sheet" id="over" hidden>
+      <div class="card">
+        <h2>No room left</h2>
+        <div class="big" id="overScore">0</div>
+        <p id="overNote">Best 0</p>
+        <div class="row"><button class="btn primary" id="again" type="button">Play again</button></div>
+      </div>
+    </div>
+    <div class="sheet" id="confirm" hidden>
+      <div class="card">
+        <h2>Start a new game?</h2>
+        <p>This game's score will be lost.</p>
+        <div class="row">
+          <button class="btn" id="confirmNo" type="button">Keep playing</button>
+          <button class="btn primary" id="confirmYes" type="button">New game</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tray" id="tray"><div class="slot"></div><div class="slot"></div><div class="slot"></div></div>
+</main>
+<script>
+/*ENGINE*/
+</script>
+<script>
+/*UI*/
+</script>
+<!--TAIL-->
+</body>
+</html>
